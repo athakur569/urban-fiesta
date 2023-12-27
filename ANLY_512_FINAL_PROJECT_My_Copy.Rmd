@@ -1,0 +1,1055 @@
+---
+title: "USA ELECTRIC ENERGY PROJECTIONS & ANALYSIS"
+author: 'Prepared By: Abhishek Thakur'
+date: "November 30, 2019"
+output:
+  html_document:
+    code_folding: hide
+    highlight: breezedark
+    mode: selfcontained
+    theme: spacelab
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  always_allow_html: true
+  word_document:
+    toc: yes
+    toc_depth: '3'
+
+---
+
+    
+    
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE, warning = FALSE)
+```
+
+
+## 1. Introduction
+
+
+Electric energy is considered the cleanest form of energy albeit it is generated using non polluting methods, and electric consumption will without doubt keep on increasing in the future. The question that arises is what will influence this change the most ?. Is it the population increase or a rapid adoption of an electricity consuming technology or maybe some other factor ? 
+
+In this research report we are trying to Analyze and Visualize the future of US Electric Energy Sector. Our focus will be on comparing the three major sectors i.e. Residential ((household heating, cooling, lighting etc.), Commercial (industrial equipment, machinery etc.) and Electric Transportation (plugin electric vehicles (PEVs), plugin hybrid electric vehicles (PHEVs) only. In comparing these sectors, we will try to find out which of these sectors will affect the trends the most.
+
+Also, we want to analyze a common assumption that with a rapid adoption of electric vehicles, which will only increase in the future, it will be interesting to see what and how much effect will such increase have on the electric grid as stated by , Nick Stickton at WIRED magazine "Electric Cars Could Destroy the Electric Grid—or Fix It Forever".
+
+
+
+## 2. Exploratory Analysis Questions
+
+
+We will try to answer the following questions in our analysis: 
+
+- What does an electrification scenario mean ?
+
+- What does demand and supply mean in this analysis ?
+
+- What is the relationship between population and electric consumption ?
+
+- Which sector is consuming the most electricity currently ?
+
+- Does this trend change in the future ?
+
+- Will the rapid adoption of electric vehicles overburden the grid in future ?
+
+
+
+## 3. Datasources and Methods used in the Analysis
+
+
+This report uses multiple datasources and datasets in order to achieve a comprehensive and confident analysis. The datasets we have used for the purpose of this report are as follows:
+
+I. Electric Technology Sales, from the National Renewable Energy Laboratory- this dataset has data on annual electricity demand projections upto 2050, by different sector, subsector, scenario, state, and year. The dataset has approximately 2 million observations.
+
+II. Electric Technology Stock, again from the National Renewable Energy Laboratory- this dataset has data annual supply           projections upto 2050. This dataset also has ~ 2 million observations.
+
+III. Population Projections 2030, from the 'WONDER' database by Centers for Disease Control and Prevention. This dataset has the total population projections for every US State and District of Columbia upto 2030.
+
+IV. Cartographic Boundary Shapefiles, from the United States Census Bureau. This dataset has the shapefiles used to create maps.
+
+
+The data has a number of values coded as zero, which could act as an outlier so we will be focusing on the median of value as a measure of central tendency for interpreting our results. We have calculated the mean and standard deviation values of the data to see the variability in the dataset.
+
+To visualize our analysis, we have created bar charts (library ggplot2), representing the 10 most populated states in US. Further we were able to create trend lines (ggplot2) to visualize the demand and supply future projections. We also have maps (library leaflet) comparing the current and future electricity demands from the transport sector and finally there are box plots showing the distribution pattern by states and also drilling down to the sub-sectors within the electric transport sector.
+
+
+### 3.1 Data Dictionary
+
+Terms used in the report:
+
+- electrification scenario - electrifications scenario or simply scenario signifies the assumption of what could be the adoption  and development rate of new electric technology, high electrification means rapid adoption and development of electric technology, medium means moderate and so on.
+
+-sales / demand -  signifies the electricity consumption
+
+-stock / supply - signifies the electricity generation
+
+
+
+## 4. Data processing
+```{r dataworkup, message=FALSE, warning=FALSE, results='hide'}
+
+
+# loading all libraries
+library(readxl)
+library(expss)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(expss)
+library(htmlTable)
+library(stringr)
+library(leaflet)
+library(mapview)
+library(plotly)
+library(sp)
+library(rgdal)
+library(geojson)
+library(rgdal)
+library(leaflet)
+library(tidyr)
+library(ggrepel)
+library(sf)
+library(tmap)
+library(tmaptools)
+
+
+#import csv file
+popln <- read_excel("/Users/abhishekthakur/iCloud Drive (Archive)/Desktop/HU/Previ. Sems/Sem.-4/ANLY512/US states pop.xlsx")
+
+sales <- read.csv("/Users/abhishekthakur/Desktop/HU/HU Coursework/HU Sem.-4/ANLY512/sales.csv") 
+
+stock <- read.csv("/Users/abhishekthakur/Desktop/HU/HU Sem.-4/ANLY512/stock.csv")
+
+colnames(stock)[colnames(stock)=="VALUE"] <- "STOCK" #rename value column in stock dataset
+colnames(sales)[colnames(sales)=="VALUE"] <- "SALES" #rename value column in sales dataset
+sales_stock <- cbind(sales, STOCK = stock$STOCK)  #combine stock value column to sales dataset to make new df sales_stock
+
+#residential sector subset
+residential <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR %in% c(2017,2018,2019,2020,2030,2040,2050), select = c(2:10))
+
+#commercial sector subset
+commercial <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR %in% c(2017,2018,2019,2020,2030,2040,2050), select = c(2:10))
+
+# transport subset
+sales_stock_trans <- subset (sales_stock, SECTOR == "TRANSPORTATION" & YEAR %in% c(2017,2018,2019,2020,2025,2030,2035,2040,2045,2050), select = (2:10))
+sales_stock_elec1 <- subset (sales_stock, SECTOR == "TRANSPORTATION" & YEAR %in% c(2020:2050), select = (2:10))
+#subset only transportation sector for selected years and all type of electric vehicles only, including hybrids, PHEV etc.
+sales_stock_elec <- subset (sales_stock_trans, !(DEMAND_TECHNOLOGY %in% c("REFERENCE MEDIUM - DUTY DIESEL VEHICLE",
+                                                              "REFERENCE MEDIUM-DUTY GASOLINE VEHICLE	",
+                                                              "REFERENCE LPG MEDIUM-DUTY VEHICLE",
+                                                              "REFERENCE DIESEL HEAVY-DUTY VEHICLE",
+                                                              "LNG HEAVY-DUTY VEHICLE",
+                                                              "REFERENCE GASOLINE HEAVY-DUTY VEHICLE",
+                                                              "REFERENCE PROPANE HEAVY-DUTY VEHICLE",
+                                                              "REFERENCE GASOLINE LIGHT-DUTY AUTO",
+                                                              "CNG LIGHT-DUTY AUTO",
+                                                              "PROPANE ICE LIGHT-DUTY AUTO",
+                                                              "HYDROGEN FUEL-CELL LIGHT-DUTY AUTO",
+                                                              "REFERENCE TDI LIGHT-DUTY AUTO",
+                                                              "REFERENCE GASOLINE LIGHT-DUTY TRUCK",
+                                                              "CNG LIGHT-DUTY TRUCK",
+                                                              "PROPANE ICE LIGHT-DUTY TRUCK",
+                                                              "HYDROGEN FUEL-CELL LIGHT-DUTY TRUCK",
+                                                              "REFERENCE TDI LIGHT-DUTY TRUCK",
+                                                              "DIESEL TRANSIT BUS",
+                                                              "CNG TRANSIT BUS",
+                                                              "GASOLINE TRANSIT BUS",
+                                                              "REFERENCE MEDIUM-DUTY GASOLINE VEHICLE",
+                                                              "REFERENCE MEDIUM-DUTY CNG VEHICLE")), select= c(1:9))
+# subset for boxplot
+sales_stock_elec2 <- subset (sales_stock_elec1, !(DEMAND_TECHNOLOGY %in% c("REFERENCE MEDIUM - DUTY DIESEL VEHICLE",
+                                                                           "REFERENCE MEDIUM-DUTY GASOLINE VEHICLE	",
+                                                                           "REFERENCE LPG MEDIUM-DUTY VEHICLE",
+                                                                           "REFERENCE DIESEL HEAVY-DUTY VEHICLE",
+                                                                           "LNG HEAVY-DUTY VEHICLE",
+                                                                           "REFERENCE GASOLINE HEAVY-DUTY VEHICLE",
+                                                                           "REFERENCE PROPANE HEAVY-DUTY VEHICLE",
+                                                                           "REFERENCE GASOLINE LIGHT-DUTY AUTO",
+                                                                           "CNG LIGHT-DUTY AUTO",
+                                                                           "PROPANE ICE LIGHT-DUTY AUTO",
+                                                                           "HYDROGEN FUEL-CELL LIGHT-DUTY AUTO",
+                                                                           "REFERENCE TDI LIGHT-DUTY AUTO",
+                                                                           "REFERENCE GASOLINE LIGHT-DUTY TRUCK",
+                                                                           "CNG LIGHT-DUTY TRUCK",
+                                                                           "PROPANE ICE LIGHT-DUTY TRUCK",
+                                                                           "HYDROGEN FUEL-CELL LIGHT-DUTY TRUCK",
+                                                                           "REFERENCE TDI LIGHT-DUTY TRUCK",
+                                                                           "DIESEL TRANSIT BUS",
+                                                                           "CNG TRANSIT BUS",
+                                                                           "GASOLINE TRANSIT BUS",
+                                                                           "REFERENCE MEDIUM-DUTY GASOLINE VEHICLE",
+                                                                           "REFERENCE MEDIUM-DUTY CNG VEHICLE")), select= c(1:9))
+
+
+# various other subsets
+rh19 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2019 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm19 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2019 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl19 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2019 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+
+RH19 <- group_by(rh19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH19)<-c("STATE", "SALES_19","STOCK_19"))
+RM19 <- group_by(rm19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM19)<-c("STATE", "SALES_19","STOCK_19"))
+RL19 <- group_by(rl19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL19)<-c("STATE", "SALES_19","STOCK_19"))
+
+
+
+rh20 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2020 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm20 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2020 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl20 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2020 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH20 <- group_by(rh20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH20)<-c("STATE", "SALES_20","STOCK_20"))
+RM20 <- group_by(rm20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM20)<-c("STATE", "SALES_20","STOCK_20"))
+RL20 <- group_by(rl20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL20)<-c("STATE", "SALES_20","STOCK_20"))
+
+
+
+
+rh25 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2025 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm25 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2025 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl25 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2025 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH25 <- group_by(rh25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH25)<-c("STATE", "SALES_25","STOCK_25"))
+RM25 <- group_by(rm25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM25)<-c("STATE", "SALES_25","STOCK_25"))
+RL25 <- group_by(rl25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL25)<-c("STATE", "SALES_25","STOCK_25"))
+
+
+
+
+rh30 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2030 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm30 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2030 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl30 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2030 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH30 <- group_by(rh30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH30)<-c("STATE", "SALES_30","STOCK_30"))
+RM30 <- group_by(rm30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM30)<-c("STATE", "SALES_30","STOCK_30"))
+RL30 <- group_by(rl30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL30)<-c("STATE", "SALES_30","STOCK_30"))
+
+
+rh35 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2035 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm35 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2035 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl35 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2035 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH35 <- group_by(rh35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH35)<-c("STATE", "SALES_35","STOCK_35"))
+RM35 <- group_by(rm35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM35)<-c("STATE", "SALES_35","STOCK_35"))
+RL35 <- group_by(rl35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL35)<-c("STATE", "SALES_35","STOCK_35"))
+
+
+
+
+rh40 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2040 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm40 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2040 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl40 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2040 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH40 <- group_by(rh40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH40)<-c("STATE", "SALES_40","STOCK_40"))
+RM40 <- group_by(rm40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM40)<-c("STATE", "SALES_40","STOCK_40"))
+RL40 <- group_by(rl40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL40)<-c("STATE", "SALES_40","STOCK_40"))
+
+
+
+
+
+rh45 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2045 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm45 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2045 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl45 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2045 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH45 <- group_by(rh45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH45)<-c("STATE", "SALES_45","STOCK_45"))
+RM45 <- group_by(rm45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM45)<-c("STATE", "SALES_45","STOCK_45"))
+RL45 <- group_by(rl45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL45)<-c("STATE", "SALES_45","STOCK_45"))
+
+
+
+
+
+rh50 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2050 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+rm50 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2050 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+rl50 <- subset (sales_stock, SECTOR == "RESIDENTIAL" & YEAR == 2050 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+RH50 <- group_by(rh50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RH50)<-c("STATE", "SALES_50","STOCK_50"))
+RM50 <- group_by(rm50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RM50)<-c("STATE", "SALES_50","STOCK_50"))
+RL50 <- group_by(rl50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(RL50)<-c("STATE", "SALES_50","STOCK_50"))
+
+
+resHIGH_SALES_19_50 <- (cbind(RH19, RH20$SALES_20, RH25$SALES_25, RH30$SALES_30, RH35$SALES_35, RH40$SALES_40, RH45$SALES_45, RH50$SALES_50)); resHIGH_SALES_19_50 <- resHIGH_SALES_19_50[-3]
+resHIGH_STOCK_19_50 <- (cbind(RH19, RH20$STOCK_20, RH25$STOCK_25, RH30$STOCK_30, RH35$STOCK_35, RH40$STOCK_40, RH45$STOCK_45, RH50$STOCK_50)); resHIGH_STOCK_19_50 <- resHIGH_STOCK_19_50[-3]
+colnames(resHIGH_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(resHIGH_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+resMED_SALES_19_50 <- (cbind(RM19, RM20$SALES_20, RM25$SALES_25, RM30$SALES_30, RM35$SALES_35, RM40$SALES_40, RM45$SALES_45, RM50$SALES_50)); resMED_SALES_19_50 <- resMED_SALES_19_50[-3]
+resMED_STOCK_19_50 <- (cbind(RM19, RM20$STOCK_20, RM25$STOCK_25, RM30$STOCK_30, RM35$STOCK_35, RM40$STOCK_40, RM45$STOCK_45, RM50$STOCK_50)); resMED_STOCK_19_50 <- resMED_STOCK_19_50[-3]
+colnames(resMED_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(resMED_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+resLOW_SALES_19_50 <- (cbind(RL19, RL20$SALES_20, RL25$SALES_25, RL30$SALES_30, RL35$SALES_35, RL40$SALES_40, RL45$SALES_45, RL50$SALES_50)); resLOW_SALES_19_50 <- resLOW_SALES_19_50[-3]
+resLOW_STOCK_19_50 <- (cbind(RL19, RL20$STOCK_20, RL25$STOCK_25, RL30$STOCK_30, RL35$STOCK_35, RL40$STOCK_40, RL45$STOCK_45, RL50$STOCK_50)); resLOW_STOCK_19_50 <- resLOW_STOCK_19_50[-3]
+colnames(resLOW_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(resLOW_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+
+#commercial and productive 
+ 
+ch19 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2019 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm19 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2019 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl19 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2019 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH19 <- group_by(ch19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH19)<-c("STATE", "SALES_19","STOCK_19"))
+CM19 <- group_by(cm19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM19)<-c("STATE", "SALES_19","STOCK_19"))
+CL19 <- group_by(cl19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL19)<-c("STATE", "SALES_19","STOCK_19"))
+
+
+
+ch20 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2020 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm20 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2020 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl20 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2020 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH20 <- group_by(ch20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH20)<-c("STATE", "SALES_20","STOCK_20"))
+CM20 <- group_by(cm20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM20)<-c("STATE", "SALES_20","STOCK_20"))
+CL20 <- group_by(cl20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL20)<-c("STATE", "SALES_20","STOCK_20"))
+
+
+ch25 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2025 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm25 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2025 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl25 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2025 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH25 <- group_by(ch25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH25)<-c("STATE", "SALES_25","STOCK_25"))
+CM25 <- group_by(cm25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM25)<-c("STATE", "SALES_25","STOCK_25"))
+CL25 <- group_by(cl25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL25)<-c("STATE", "SALES_25","STOCK_25"))
+
+
+
+
+ch30 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2030 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm30 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2030 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl30 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2030 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH30 <- group_by(ch30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH30)<-c("STATE", "SALES_30","STOCK_30"))
+CM30 <- group_by(cm30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM30)<-c("STATE", "SALES_30","STOCK_30"))
+CL30 <- group_by(cl30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL30)<-c("STATE", "SALES_30","STOCK_30"))
+
+
+ch35 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2035 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm35 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2035 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl35 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2035 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH35 <- group_by(ch35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH35)<-c("STATE", "SALES_35","STOCK_35"))
+CM35 <- group_by(cm35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM35)<-c("STATE", "SALES_35","STOCK_35"))
+CL35 <- group_by(cl35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL35)<-c("STATE", "SALES_35","STOCK_35"))
+
+ch40 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2040 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm40 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2040 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl40 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2040 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH40 <- group_by(ch40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH40)<-c("STATE", "SALES_40","STOCK_40"))
+CM40 <- group_by(cm40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM40)<-c("STATE", "SALES_40","STOCK_40"))
+CL40 <- group_by(cl40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL40)<-c("STATE", "SALES_40","STOCK_40"))
+
+ch45 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2045 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm45 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2045 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl45 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2045 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH45 <- group_by(ch45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH45)<-c("STATE", "SALES_45","STOCK_45"))
+CM45 <- group_by(cm45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM45)<-c("STATE", "SALES_45","STOCK_45"))
+CL45 <- group_by(cl45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL45)<-c("STATE", "SALES_45","STOCK_45"))
+
+ch50 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2050 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(2:10))
+cm50 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2050 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+cl50 <- subset (sales_stock, SECTOR %in% c("COMMERCIAL","PRODUCTIVE") & YEAR == 2050 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(2:10))
+
+CH50 <- group_by(ch50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CH50)<-c("STATE", "SALES_50","STOCK_50"))
+CM50 <- group_by(cm50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CM50)<-c("STATE", "SALES_50","STOCK_50"))
+CL50 <- group_by(cl50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(CL50)<-c("STATE", "SALES_50","STOCK_50"))
+
+
+comHIGH_SALES_19_50 <- (cbind(CH19, CH20$SALES_20, CH25$SALES_25, CH30$SALES_30, CH35$SALES_35, CH40$SALES_40, CH45$SALES_45, CH50$SALES_50)); comHIGH_SALES_19_50 <- comHIGH_SALES_19_50[-3]
+comHIGH_STOCK_19_50 <- (cbind(CH19, CH20$STOCK_20, CH25$STOCK_25, CH30$STOCK_30, CH35$STOCK_35, CH40$STOCK_40, CH45$STOCK_45, CH50$STOCK_50)); comHIGH_STOCK_19_50 <- comHIGH_STOCK_19_50[-3]
+colnames(comHIGH_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(comHIGH_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+comMED_SALES_19_50 <- (cbind(CM19, CM20$SALES_20, CM25$SALES_25, CM30$SALES_30, CM35$SALES_35, CM40$SALES_40, CM45$SALES_45, CM50$SALES_50)); comMED_SALES_19_50 <- comMED_SALES_19_50[-3]
+comMED_STOCK_19_50 <- (cbind(CM19, CM20$STOCK_20, CM25$STOCK_25, CM30$STOCK_30, CM35$STOCK_35, CM40$STOCK_40, CM45$STOCK_45, CM50$STOCK_50)); comMED_STOCK_19_50 <- comMED_STOCK_19_50[-3]
+colnames(comMED_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(comMED_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+comLOW_SALES_19_50 <- (cbind(CL19, CL20$SALES_20, CL25$SALES_25, CL30$SALES_30, CL35$SALES_35, CL40$SALES_40, CL45$SALES_45, CL50$SALES_50)); comLOW_SALES_19_50 <- comLOW_SALES_19_50[-3]
+comLOW_STOCK_19_50 <- (cbind(CL19, CL20$STOCK_20, CL25$STOCK_25, CL30$STOCK_30, CL35$STOCK_35, CL40$STOCK_40, CL45$STOCK_45, CL50$STOCK_50)); comLOW_STOCK_19_50 <- comLOW_STOCK_19_50[-3]
+colnames(comLOW_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(comLOW_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+
+trel_h19 <- subset (sales_stock_elec, YEAR == 2019 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m19 <- subset (sales_stock_elec, YEAR == 2019 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l19 <- subset (sales_stock_elec, YEAR == 2019 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h19 <- group_by(trel_h19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h19)<-c("STATE", "SALES_19","STOCK_19"))
+TREL_m19 <- group_by(trel_m19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m19)<-c("STATE", "SALES_19","STOCK_19"))
+TREL_l19 <- group_by(trel_l19, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l19)<-c("STATE", "SALES_19","STOCK_19"))
+
+
+
+trel_h20 <- subset (sales_stock_elec, YEAR == 2020 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m20 <- subset (sales_stock_elec, YEAR == 2020 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l20 <- subset (sales_stock_elec, YEAR == 2020 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h20 <- group_by(trel_h20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h20)<-c("STATE", "SALES_20","STOCK_20"))
+TREL_m20 <- group_by(trel_m20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m20)<-c("STATE", "SALES_20","STOCK_20"))
+TREL_l20 <- group_by(trel_l20, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l20)<-c("STATE", "SALES_20","STOCK_20"))
+
+
+trel_h25 <- subset (sales_stock_elec, YEAR == 2025 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m25 <- subset (sales_stock_elec, YEAR == 2025 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l25 <- subset (sales_stock_elec, YEAR == 2025 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h25 <- group_by(trel_h25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h25)<-c("STATE", "SALES_25","STOCK_25"))
+TREL_m25 <- group_by(trel_m25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m25)<-c("STATE", "SALES_25","STOCK_25"))
+TREL_l25 <- group_by(trel_l25, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l25)<-c("STATE", "SALES_25","STOCK_25"))
+
+
+trel_h30 <- subset (sales_stock_elec, YEAR == 2030 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m30 <- subset (sales_stock_elec, YEAR == 2030 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l30 <- subset (sales_stock_elec, YEAR == 2030 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h30 <- group_by(trel_h30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h30)<-c("STATE", "SALES_30","STOCK_30"))
+TREL_m30 <- group_by(trel_m30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m30)<-c("STATE", "SALES_30","STOCK_30"))
+TREL_l30 <- group_by(trel_l30, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l30)<-c("STATE", "SALES_30","STOCK_30"))
+
+
+trel_h35 <- subset (sales_stock_elec, YEAR == 2035 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m35 <- subset (sales_stock_elec, YEAR == 2035 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l35 <- subset (sales_stock_elec, YEAR == 2035 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h35 <- group_by(trel_h35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h35)<-c("STATE", "SALES_35","STOCK_35"))
+TREL_m35 <- group_by(trel_m35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m35)<-c("STATE", "SALES_35","STOCK_35"))
+TREL_l35 <- group_by(trel_l35, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l35)<-c("STATE", "SALES_35","STOCK_35"))
+
+
+trel_h40 <- subset (sales_stock_elec, YEAR == 2040 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m40 <- subset (sales_stock_elec, YEAR == 2040 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l40 <- subset (sales_stock_elec, YEAR == 2040 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h40 <- group_by(trel_h40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h40)<-c("STATE", "SALES_40","STOCK_40"))
+TREL_m40 <- group_by(trel_m40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m40)<-c("STATE", "SALES_40","STOCK_40"))
+TREL_l40 <- group_by(trel_l40, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l40)<-c("STATE", "SALES_40","STOCK_40"))
+
+
+
+trel_h45 <- subset (sales_stock_elec, YEAR == 2045 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m45 <- subset (sales_stock_elec, YEAR == 2045 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l45 <- subset (sales_stock_elec, YEAR == 2045 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h45 <- group_by(trel_h45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h45)<-c("STATE", "SALES_45","STOCK_45"))
+TREL_m45 <- group_by(trel_m45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m45)<-c("STATE", "SALES_45","STOCK_45"))
+TREL_l45 <- group_by(trel_l45, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l45)<-c("STATE", "SALES_45","STOCK_45"))
+
+
+trel_h50 <- subset (sales_stock_elec, YEAR == 2050 & SCENARIO =="HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",                select = c(1:9))
+trel_m50 <- subset (sales_stock_elec, YEAR == 2050 & SCENARIO =="MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+trel_l50 <- subset (sales_stock_elec, YEAR == 2050 & SCENARIO =="LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT",              select = c(1:9))
+
+TREL_h50 <- group_by(trel_h50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_h50)<-c("STATE", "SALES_50","STOCK_50"))
+TREL_m50 <- group_by(trel_m50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_m50)<-c("STATE", "SALES_50","STOCK_50"))
+TREL_l50 <- group_by(trel_l50, STATE) %>% summarise(sum(SALES), sum(STOCK)); (colnames(TREL_l50)<-c("STATE", "SALES_50","STOCK_50"))
+
+
+trelHIGH_SALES_19_50 <- (cbind(TREL_h19, TREL_h20$SALES_20, TREL_h25$SALES_25, TREL_h30$SALES_30, TREL_h35$SALES_35, TREL_h40$SALES_40, TREL_h45$SALES_45, TREL_h50$SALES_50)); trelHIGH_SALES_19_50 <- trelHIGH_SALES_19_50[-3]
+trelHIGH_STOCK_19_50 <- (cbind(TREL_h19, TREL_h20$STOCK_20, TREL_h25$STOCK_25, TREL_h30$STOCK_30, TREL_h35$STOCK_35, TREL_h40$STOCK_40, TREL_h45$STOCK_45, TREL_h50$STOCK_50)); trelHIGH_STOCK_19_50 <- trelHIGH_STOCK_19_50[-3]
+colnames(trelHIGH_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(trelHIGH_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+
+trelMED_SALES_19_50 <- (cbind(TREL_m19, TREL_m20$SALES_20, TREL_m25$SALES_25, TREL_m30$SALES_30, TREL_m35$SALES_35, TREL_m40$SALES_40, TREL_m45$SALES_45, TREL_m50$SALES_50)); trelMED_SALES_19_50 <- trelMED_SALES_19_50[-3]
+trelMED_STOCK_19_50 <- (cbind(TREL_m19, TREL_m20$STOCK_20, TREL_m25$STOCK_25, TREL_m30$STOCK_30, TREL_m35$STOCK_35, TREL_m40$STOCK_40, TREL_m45$STOCK_45, TREL_m50$STOCK_50)); trelMED_STOCK_19_50 <- trelMED_STOCK_19_50[-3]
+colnames(trelMED_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(trelMED_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+trelLOW_SALES_19_50 <- (cbind(TREL_l19, TREL_l20$SALES_20, TREL_l25$SALES_25, TREL_l30$SALES_30, TREL_l35$SALES_35, TREL_l40$SALES_40, TREL_l45$SALES_45, TREL_l50$SALES_50)); trelLOW_SALES_19_50 <- trelLOW_SALES_19_50[-3]
+trelLOW_STOCK_19_50 <- (cbind(TREL_l19, TREL_l20$STOCK_20, TREL_l25$STOCK_25, TREL_l30$STOCK_30, TREL_l35$STOCK_35, TREL_l40$STOCK_40, TREL_l45$STOCK_45, TREL_l50$STOCK_50)); trelLOW_STOCK_19_50 <- trelLOW_STOCK_19_50[-3]
+colnames(trelLOW_SALES_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+colnames(trelLOW_STOCK_19_50) <- c("STATE", "2019","2020","2025","2030","2035","2040","2045","2050")
+
+trelaggr <- trelHIGH_SALES_19_50[2:9]
+trelH_SA<-colSums(trelaggr)
+trelH_SA<-as.data.frame(trelH_SA)
+
+#change all values in scnario observation
+
+
+rh19$SCENARIO <- str_replace_all(rh19$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh20$SCENARIO <- str_replace_all(rh20$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh25$SCENARIO <- str_replace_all(rh25$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh30$SCENARIO <- str_replace_all(rh30$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh35$SCENARIO <- str_replace_all(rh35$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh40$SCENARIO <- str_replace_all(rh40$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh45$SCENARIO <- str_replace_all(rh45$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+rh50$SCENARIO <- str_replace_all(rh50$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+
+rm19$SCENARIO <- str_replace_all(rm19$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm20$SCENARIO <- str_replace_all(rm20$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm25$SCENARIO <- str_replace_all(rm25$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm30$SCENARIO <- str_replace_all(rm30$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm35$SCENARIO <- str_replace_all(rm35$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm40$SCENARIO <- str_replace_all(rm40$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm45$SCENARIO <- str_replace_all(rm45$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+rm50$SCENARIO <- str_replace_all(rm50$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+
+rl19$SCENARIO <- str_replace_all(rl19$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl20$SCENARIO <- str_replace_all(rl20$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl25$SCENARIO <- str_replace_all(rl25$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl30$SCENARIO <- str_replace_all(rl30$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl35$SCENARIO <- str_replace_all(rl35$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl40$SCENARIO <- str_replace_all(rl40$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl45$SCENARIO <- str_replace_all(rl45$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+rl50$SCENARIO <- str_replace_all(rl50$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+
+
+
+ch19$SCENARIO <- str_replace_all(ch19$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch20$SCENARIO <- str_replace_all(ch20$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch25$SCENARIO <- str_replace_all(ch25$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch30$SCENARIO <- str_replace_all(ch30$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch35$SCENARIO <- str_replace_all(ch35$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch40$SCENARIO <- str_replace_all(ch40$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch45$SCENARIO <- str_replace_all(ch45$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+ch50$SCENARIO <- str_replace_all(ch50$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+
+cm19$SCENARIO <- str_replace_all(cm19$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm20$SCENARIO <- str_replace_all(cm20$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm25$SCENARIO <- str_replace_all(cm25$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm30$SCENARIO <- str_replace_all(cm30$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm35$SCENARIO <- str_replace_all(cm35$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm40$SCENARIO <- str_replace_all(cm40$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm45$SCENARIO <- str_replace_all(cm45$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+cm50$SCENARIO <- str_replace_all(cm50$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+
+cl19$SCENARIO <- str_replace_all(cl19$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl20$SCENARIO <- str_replace_all(cl20$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl25$SCENARIO <- str_replace_all(cl25$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl30$SCENARIO <- str_replace_all(cl30$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl35$SCENARIO <- str_replace_all(cl35$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl40$SCENARIO <- str_replace_all(cl40$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl45$SCENARIO <- str_replace_all(cl45$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+cl50$SCENARIO <- str_replace_all(cl50$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+
+
+
+trel_h19$SCENARIO <- str_replace_all(trel_h19$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h20$SCENARIO <- str_replace_all(trel_h20$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h25$SCENARIO <- str_replace_all(trel_h25$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h30$SCENARIO <- str_replace_all(trel_h30$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h35$SCENARIO <- str_replace_all(trel_h35$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h40$SCENARIO <- str_replace_all(trel_h40$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h45$SCENARIO <- str_replace_all(trel_h45$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+trel_h50$SCENARIO <- str_replace_all(trel_h50$SCENARIO, 'HIGH ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'HIGH Electrification')
+
+trel_m19$SCENARIO <- str_replace_all(trel_m19$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m20$SCENARIO <- str_replace_all(trel_m20$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m25$SCENARIO <- str_replace_all(trel_m25$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m30$SCENARIO <- str_replace_all(trel_m30$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m35$SCENARIO <- str_replace_all(trel_m35$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m40$SCENARIO <- str_replace_all(trel_m40$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m45$SCENARIO <- str_replace_all(trel_m45$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+trel_m50$SCENARIO <- str_replace_all(trel_m50$SCENARIO, 'MEDIUM ELECTRIFICATION - MODERATE TECHNOLOGY ADVANCEMENT', 'MEDIUM Electrification')
+
+trel_l19$SCENARIO <- str_replace_all(trel_l19$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l20$SCENARIO <- str_replace_all(trel_l20$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l25$SCENARIO <- str_replace_all(trel_l25$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l30$SCENARIO <- str_replace_all(trel_l30$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l35$SCENARIO <- str_replace_all(trel_l35$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l40$SCENARIO <- str_replace_all(trel_l40$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l45$SCENARIO <- str_replace_all(trel_l45$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+trel_l50$SCENARIO <- str_replace_all(trel_l50$SCENARIO, 'LOW ELECTRICITY GROWTH - MODERATE TECHNOLOGY ADVANCEMENT', 'LOW Electrification')
+
+
+```
+
+The biggest challenge with two of the datasets was that they had approximately 2 million observations. Although having so many observations provides an opportunity for a robust analysis, using these many observations is effectively required multiple subsets and transformations to achieve manageable subsets.
+
+Further, we have merged different datasets, created subsets from them, combined those subsets, performed transformations, mutations and various other data cleaning techniques.
+
+We also created custom shapefiles by merging our datasets to the downloaded Cartographic Boundary Shapefiles to create desired maps. 
+
+
+
+## 5. Baseline Statistical Tables
+
+
+The baseline statistical tables help us to analyze and visualize quick statistics about the data we have. These can be then used to build upon as we go further into the analysis . We have only used the years 2019, 2020 and 2030 in order to make the statistics comparable to our population data which has projections only up to 2030.
+
+```{r table1, warning=FALSE, message=FALSE}
+
+trans_colnames <- setnames(sales_stock_elec, old=c("SALES","STOCK"), new=c("Demand", "Supply"), skip_absent = TRUE)
+
+trans_htmltable <- subset (trans_colnames, (YEAR %in% c(2019,2020,2030)), select = c(1:9))
+
+trans_htmltable%>%
+  tab_cells(Demand, Supply) %>%
+  tab_cols() %>%
+  tab_rows(YEAR) %>%
+  tab_weight() %>%
+  tab_stat_mean_sd_n(weighted_valid_n = T, labels =c("Mean", "SD", "Valid N")) %>%
+  #tab_stat_min() %>%
+  tab_pivot() %>%
+  htmlTable(header = paste(c("Demand and Supply","for Electric ", "Transport Sector in MWh")))
+
+```
+Table 1: Demand and Supply for Electric Transport Sector (High, Medium & Low Electrification Scenarios)
+
+
+Table 1 above, shows the electricity demand and supply of the Transportation sector. We can see from the statistical table that the mean value of the demand or usage of electricity in transportation sector in 2019 is 5310 MWh and the standard deviation of  41272 MWh which is very high.  The high standard deviation here shows the irregularity in the demand for electricity. 
+It is also interesting to see at the same time the mean value of supply or production is 780226 MWh with the standard deviation of 1253680 MWh.
+
+We can see a similar pattern in demand for 2020 where Mean is 5563 MWh which is close to the previous year 2019, but we can see the supply decreasing to 364874 MWh. 
+
+Most importantly, mean demand for 2030 is almost double at 9374 MWh from the current mean, similarly projected mean for the supply is 8481308 MWh which is almost 10 times the current mean.
+
+
+```{r table2, warning=FALSE, message=FALSE}
+
+res_colnames <- setnames(residential, old=c("SALES","STOCK"), new=c("Demand", "Supply"), skip_absent = TRUE)
+
+res_htmltable <- subset (res_colnames, (YEAR %in% c(2019,2020,2030)), select = c(1:9))
+
+res_htmltable%>%
+  tab_cells(Demand, Supply) %>%
+  tab_cols() %>%
+  tab_rows(YEAR) %>%
+  tab_weight() %>%
+  tab_stat_mean_sd_n(weighted_valid_n = T, labels =c("Mean", "SD", "Valid N")) %>%
+  #tab_stat_min() %>%
+  tab_pivot() %>%
+  htmlTable(header = paste(c("Electricity Demand ","and Supply for ", "Residential Sector in MWh")))
+
+``` 
+Table 2: Electricity Demand and Supply for Residential Sector (High, Medium & Low Electrification Scenarios)
+
+
+Table 2 shows demand and supply for the Residential sector. We can see from the statistical table that the mean value of the demand or usage of electricity in the residential sector is 235389 MWh in 2019 and the standard deviation of  1611812 MWh which again is very high.  The high standard deviation here shows the irregularity in the demand for electricity. 
+
+We can clearly see the electrification demand in the residential sector is high compared to what we saw in the transportation sector. The supply of electricity in the residential sector is also high which is 4939964 MWh. As is the case with the transport sector, we can see the increase in demand and supply in the future. The demand for 2020 is projected 207967MWh and supply is projected at the 218739 MWh mark. 
+
+
+```{r table3, message=FALSE, warning=FALSE}
+
+com_colnames <- setnames(commercial, old=c("SALES","STOCK"), new=c("Demand", "Supply"), skip_absent = TRUE)
+
+com_htmltable <- subset (com_colnames, (YEAR %in% c(2019,2020,2030)), select = c(1:9))
+
+com_htmltable%>%
+  tab_cells(Demand, Supply) %>%
+  tab_cols() %>%
+  tab_rows(YEAR) %>%
+  tab_weight() %>%
+  tab_stat_mean_sd_n(weighted_valid_n = T, labels =c("Mean", "SD", "Valid N")) %>%
+  #tab_stat_min() %>%
+  tab_pivot() %>%
+  htmlTable(header = paste(c("Electricity Demand ","and Supply for ", "Commercial Sector In MWh")))
+
+```
+Table 3: Electricity Demand and Supply for Commercial Sector (High, Medium & Low Electrification Scenarios)
+
+
+Table 3 shows values for the Commercial sector. We can see from the statistical table that the mean value of the demand or usage of electricity in the residential sector is 59405 MWh, and the mean value for the supply of is 171449 MWh. The standard deviation being higher than the mean value shows the data is skewed towards the right. We can see very minor change in  projected demand in commercial sector for the year 2020 which is 59802 MWh, whereas increase in the supply which is 780988 MWh. 
+
+
+
+## 6. Population Projections
+
+
+Visualizing population projections was important for this analysis as it was necessary to factor in population statistics so as to standardize the effect of population growth on the electricity demand. 
+
+```{r plot1, fig.align="center", fig.height=4, fig.width=10, message=FALSE, warning=FALSE}
+popul <- popln[c(1,2,5)]
+popul <- melt(popul, id.vars='STATE')
+popul1 <- ggplot(popul, aes(x=reorder(popul$STATE, -popul$value), y=popul$value, fill=popul$variable ))+
+    theme_classic()+
+  geom_bar(stat = "identity",position = 'dodge', width= 0.6)+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1)) +
+  labs(x= "States", y= "Population", title= "POPULATION PROJECTIONS", subtitle =  "All 50 States & D.C. 2019 vs. 2030")+
+  scale_fill_discrete(name = "YEAR")+
+  scale_y_continuous(labels = scales::comma)
+popul1
+```
+
+The graph above shows a clear increase in population for almost all states from 2019 to 2030, which is as expected.  Only New York, Illinois, Pennsylvania, Ohio and Michigan show negligible change, this could be attributed to the facts of population drift, decrease in birth rate, or other such factors.
+
+
+```{r plot2, fig.align="center", fig.height=4, fig.width=10, message=FALSE, warning=FALSE}
+# projections for top 10 states
+popul_t10 <- popln[c(5,44,10,33,39,14,36,11,34,23),]
+popul_t10 <- melt(popul_t10, id.vars='STATE')
+popul1_t10 <- ggplot(popul_t10, aes(x=reorder(popul_t10$STATE, -popul_t10$value), y=popul_t10$value, fill=popul_t10$variable ))+
+    theme_minimal()+
+  geom_bar(stat = "identity",position = 'dodge', width= 0.35)+
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0.1)) +
+  labs(x= "States", y= "Population", title= "Top 10 Most Populated States - Projections 2030")+
+  scale_fill_discrete(name = "YEAR")+
+  scale_y_continuous(labels = scales::comma)
+popul1_t10
+
+```
+
+With the 10 most populated states the trend is the same with a steady increase in population every 5 years. And again, we can clearly see a stagnant population change in New York, Illinois, Pennsylvania, Ohio and Michigan.
+
+It is interesting to see that even within these top 10 states California at 1st position has almost four times the population of Michigan at 10th position.
+
+
+
+## 7. Demand vs. Supply Future Trends  
+
+```{r ds1, fig.height=6.5, fig.width=10, message=FALSE, warning=FALSE, results='hide'}
+sales_all_sectors <- sales_stock[c(3,5,9)]
+sales_all_sectors <- subset (sales_all_sectors, YEAR %in% c(2020,2025,2030,2035,2040,2045,2050), select = (1:3))
+
+stock_all_sectors <- sales_stock[c(3,5,10)]
+stock_all_sectors <- subset(stock_all_sectors, YEAR %in% c(2020,2025,2030,2035,2040,2045,2050), select = (1:3))
+stock_all_sectors <- as.data.frame(stock_all_sectors)
+#sales_allts <- group_by(sales_all_sectors, STATE) %>% summarise(sum(SALES)); (colnames(sales_allt)<-c("STATE", "SALES"))
+sales_allty<- group_by(sales_all_sectors, YEAR) %>% summarise(sum(SALES)); (colnames(sales_allty)<-c("YEAR", "SALES"))
+stock_allty<- group_by(stock_all_sectors, YEAR) %>% summarise(sum(STOCK)); (colnames(stock_allty)<-c("YEAR", "STOCK"))
+
+# sales_stock_allty <- (cbind(sales_allty, stock_allty$STOCK ))
+# colnames(sales_stock_allty) <- c("YEAR", "SALES","STOCK")
+
+
+require(gridExtra)
+sales_all_line1 <- ggplot(sales_allty, aes(x=sales_allty$YEAR, y=sales_allty$SALES)) +
+  theme_minimal()+
+  geom_line(color="green", size=3)+
+  labs(x= "YEAR", y= "Consumption in MWh", title= "Electricity Consumption (Demand) Projections for All Sectors upto 2050")+
+  #scale_fill_discrete(name = "YEAR")+
+  scale_y_continuous(labels = scales::comma)+geom_smooth(method=lm)+
+  # annotate( "text",x=2045, y=100000000,label="Smoothing = linear model", size=3 )+
+  geom_label_repel(label=scales::comma(round(sales_allty$SALES),1),nudge_y=250000000,segment.size = 2.1, 
+                      segment.alpha = .9, size=3,
+                      color='darkred')
+
+sales_all_line2 <- ggplot(stock_allty, aes(x=stock_allty$YEAR, y=round( stock_allty$STOCK, digits=1)))+
+    theme_minimal()+
+  geom_line(color="red", size=3)+
+  labs(x= "YEAR", y= "Generation in MWh", title= "Electrcity Generation (Supply) Projections for All Sectors upto 2050")+
+  #scale_fill_discrete(name = "YEAR")+
+  # annotate( "text",x=2045, y=10000000000,label="Smoothing = linear model", size=6 )+
+  scale_y_continuous(labels = scales::comma)+ geom_smooth(method=lm)+
+  geom_label_repel(label=scales::comma(round(stock_allty$STOCK),1),nudge_y=-45000000000,segment.size = 2.1, 
+                      segment.alpha = .9, size=3,
+                      color='black')
+
+grid.arrange(sales_all_line1,  sales_all_line2, nrow=2)
+```
+
+The trend line shows the projection of consumption(demand) and production(supply) of electricity for all sectors up to 2050. It is interesting to see that the figure is creating a mirror image for demand and supply. When the consumption is decreasing the supply is increasing and when the consumption is increasing the supply is decreasing, showing the inverse relationship between the demand and supply. 
+
+The electricity consumption is decreasing in mid-twenties which is 2025, and again increases after that and reaches its peak in 2035 and slowly decreases till 2045 and increasing again. Whereas the supply is increasing in the mid-twenties and reaching its peak in 2025 and slowly decreasing after that till year 2040, and we can see it staying nearly at the same point after that.
+
+Using this trend an assumption can be made that the electricity generation will reach a peak value in about 2025 and there is a fall in generation after that which could mean that the generation plants reach their full capacity or could have been retired by that time. This is a cause of concern as it means that actions need to be taken for preparing the grid for incresed demand in the future. 
+
+"America’s coal and nuclear power plants have long provided reliable, essential electricity. But unless action is taken to preserve their non-stop baseload electricity, the U.S. could lose generating capacity at precisely the time when demand is increasing. And once these plants close, there’s no bringing them back." Sep7 2018, Terry Jarrett for The Detroit News.
+
+
+
+## 8. Annual Consumption Projections of 3 Sectors 
+  10 Most Populated States ( High Electrification )
+
+
+In this section we will be comparing the three sectors for electricity consumption 
+
+### 8.1 Residential Sector 
+```{r res10, fig.height=4.6, fig.width=10, message=FALSE, warning=FALSE, results='hide'}
+
+resHIGH_SALES_191050 <- resHIGH_SALES_19_50[c(1:5)]
+r3_t10 <-resHIGH_SALES_191050[c(5,44,10,33,39,14,36,11,34,23),] #top 10 populated states
+r2 <- melt(r3_t10, id.vars='STATE')
+
+r3<- ggplot(r2, aes(x=reorder(r2$STATE, -r2$value), y=r2$value, fill=r2$variable)) +
+  theme_minimal()+
+  geom_bar(stat = "identity",position = 'dodge', width = 0.4)+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1))+
+  labs(x= "States", y= "Electric Consumption in MWh", title= "RESIDENTIAL SECTOR", subtitle ="High Electrification Scenario of 10 Most Populated States" )+
+  scale_fill_discrete(name = "YEAR")+
+  scale_y_continuous(labels = scales::comma)
+r3
+```
+
+From the barplot of the residential sector we can see that the consumption is decreasing in 2020 and gradually increasing after 2025 and reaching in peak by 2030. It is interesting to see all the 10 most populated states in the united states is showing the same trend of increase and decrease.
+
+A dip in consumption for 2020 and 2025 compared to current suggests either economic recession or other causes which could be attributed to facts like population drift etc.
+
+We can also see from the bar plot that California is the highest consumer of the electricity and which also makes sense having the highest population than rest of the states.
+
+
+### 8.2 Commercial Sector 
+```{r com10, fig.height=4, fig.width=10, message=FALSE, warning=FALSE, results='hide'}
+
+comHIGH_SALES_191050 <- comHIGH_SALES_19_50[c(1:5)]
+c3_t10 <-comHIGH_SALES_191050[c(5,44,10,33,39,14,36,11,34,23),]
+c2 <- melt(c3_t10, id.vars='STATE')
+c3<- ggplot(c2, aes(x=reorder(c2$STATE, -c2$value), y=c2$value, fill=c2$variable)) +
+  theme_minimal()+
+       geom_bar(stat = "identity",position = 'dodge', width=0.4)+
+       theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1))+
+       labs(x= "States", y= "Electric Consumption in MWh", title= "COMMERCIAL SECTOR", subtitle ="High Electrification Scenario of 10 Most Populated States" )+
+      scale_fill_discrete(name = "YEAR")+
+       scale_y_continuous(labels = scales::comma)
+c3
+```
+
+The barplot of the commercial sector shows similar result as for the residential sector in terms of the population and consumption. But the consumption is not that much fluctuating as we can see in residential sector. The consumption is somehow similar in all 10 states throughout the decades, which is interesting projection to see. It is also interesting to see that the consumption is staying almost constant in states like New York, Pennsylvania etc, as mentioned earlier.
+
+
+### 8.3 Transportation Sector 
+```{r trans10, fig.height=4, fig.width=10, message=FALSE, warning=FALSE, results='hide'}
+
+trelHIGH_SALES_191050 <- trelHIGH_SALES_19_50[c(1:5)]
+t3_t10 <-trelHIGH_SALES_191050[c(5,44,10,33,39,14,36,11,34,23),]
+t2 <- melt(t3_t10, id.vars='STATE')
+
+t3<- ggplot(t2, aes(x=reorder(t2$STATE, - t2$value), y=t2$value, fill=t2$variable)) +
+  theme_minimal()+
+      geom_bar(stat = "identity",position = 'dodge', width = 0.4)+
+      theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1)) +
+      labs(x= "States", y= "Electric Consumption in MWh", title= "ELECTRIC TRANSPORTATION SECTOR", subtitle ="High Electrification Scenario of 10 Most Populated States" )+
+      scale_fill_discrete(name = "YEAR")+
+      scale_y_continuous(labels = scales::comma)
+t3
+```
+
+
+The bar chart above shows a clear fact that increase in consumption in the transport sector is almost 1000 % from 2109 to 2030 in all 10 states. In comparison to other sectors where change is less than 90%, shows an astronomical jump in the adoption of electric vehicles. 
+
+It is also noteworthy that although there is a massive increase in demand in future from this sector it is still almost 1/100th of the usage in other two sectors.
+
+
+## 9. Mapview Comparing Electric Transport Sector (2019 vs. 2030)
+
+PHEVs (plugin hybrid electric vehicles), PEVs (plugin electric vehicles)
+
+```{r map1, fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
+
+# load shape file
+shapefile <- "/Users/abhishekthakur/Downloads/cb_2018_us_state_5m/cb_2018_us_state_5m.shp"
+
+usgeo <- read_shape(file=shapefile, as.sf=TRUE)
+
+stgeo <- subset(usgeo, !(usgeo$NAME%in%c("Puerto Rico", "United States Virgin Islands", "Commonwealth of the Northern Mariana Islands","Guam", "American Samoa")))
+
+stgeo$NAME <-as.character(stgeo$NAME)
+
+STUSPS <- as.vector(c("AL", "AK", "AZ", "AR", "CA" ,"CO", "CT", "DE", "DC", "FL" ,"GA" ,"HI", "ID" ,"IL", "IN", "IA", "KS", "KY", "LA", "ME" ,"MD" ,"MA", "MI" ,"MN","MS", "MO" ,"MT" ,
+                      "NE", "NV", "NH", "NJ", "NM" ,"NY","NC","ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX" ,"UT" ,"VT", "VA" ,"WA","WV", "WI", "WY"))
+
+trelshape <- trelHIGH_SALES_191050[order(trelHIGH_SALES_191050$STATE),]
+
+trelshape$STUSPS <- STUSPS
+stgeo$STUSPS<- as.character((stgeo$STUSPS))
+
+#combine own dataset with shapefile data
+stmap <- append_data(stgeo, trelshape,key.shp = "STUSPS", key.data = "STUSPS")
+
+#create palette
+palette2019 <- colorNumeric(palette="Greens", domain = stmap$`2019`)
+stpopup <- paste("State:", stmap$NAME,
+                  "Consumtion(MWh):", scales::comma(round(stmap$`2019`),2))
+#remove warning message
+stmap_projected <- sf::st_transform(stmap, "+proj=longlat +datum=WGS84")
+
+#create leaflet map
+m <- leaflet(stmap_projected) %>%
+  addTiles() %>% 
+  addProviderTiles(providers$OpenMapSurfer.AdminBounds) %>%
+  setView(-95, 35, zoom=3) %>% 
+  addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2,
+              opacity = 1,
+              fillOpacity =1, 
+              label =stpopup,
+              color= ~palette2019(stmap$`2019`)) %>% 
+ addLegend("bottomright", pal=palette2019, values = stmap$`2019`, bins=3, colors, title = "TRANSPORT SECTOR 2019 <br> Annual Comsumption <br> (PHEVs & PEVs)", labFormat = labelFormat(suffix = " MWh"), opacity = 1)
+
+#second map 2030
+palette2030 <- colorNumeric(palette="Oranges", domain = stmap$`2030`)
+stpopup1 <- paste("State:", stmap$NAME, 
+                  "Consumtion:",scales::comma(round(stmap$`2030`),2))
+
+stmap_projected1 <- sf::st_transform(stmap, "+proj=longlat +datum=WGS84")
+
+#<- make_map1 <- function() {
+
+m1 <- leaflet(stmap_projected1) %>%
+    addTiles() %>% 
+  addProviderTiles(providers$OpenMapSurfer.AdminBounds) %>%
+  setView(-95, 35, zoom=3) %>% 
+  addPolygons(stroke=FALSE,
+              smoothFactor = 0.2,
+              opacity = 1,
+              fillOpacity =1, 
+              label =stpopup1,
+              color= ~palette2030(stmap$`2030`)) %>% 
+  addLegend("bottomright", pal=palette2030, values = stmap$`2030`, bins=2, colors, title = "TRANSPORT SECTOR 2030 <br> Annual Comsumption <br> (PHEVs & PEVs)", labFormat = labelFormat(suffix = " MWh"), opacity = 1)
+
+leafsync::sync(m, m1) 
+# addEasyButton(
+#   easyButton(
+#     icon = "ion-arrow-shrink", 
+#     title = "Reset View", 
+#     onClick = JS(
+#       "function(btn, map){ map.setView(map._initialCenter, map._initialZoom); }"
+#     )
+#   )
+# ) %>% 
+#   htmlwidgets::onRender(
+#     JS(
+#       "
+# function(el, x){ 
+#   var map = this; 
+#   map.whenReady(function(){
+#     map._initialCenter = map.getCenter(); 
+#     map._initialZoom = map.getZoom();
+#   });
+# }"
+#     )
+#   ) %>%
+#   force()
+# 
+# }
+# make_map()
+
+
+```
+
+The leaflet map shows the comparison of the usage of electricity in MWh by transportation sector in the year 2019 and 2030. The map view also provides the colour based on the consumption the darker colour meaning the higher amount of the usage. 
+
+From the map we can see that California is the highest user of the electricity in transportation sector and Texas is the second. The future projection and comparison also show that they will remain the highest consumer of the electricity in the future also.
+
+Looking at the map legends we see that the consumption increases 10 folds between 2019 and 2030.        
+
+
+## 10. Distribution of Electric Transportation (10 Most Populated States)
+
+```{r box, echo=FALSE, fig.height=5, fig.width=8, message=FALSE, warning=FALSE, results='hide'}
+
+# BOX PLOT
+
+sale_tran_box <- sales_stock_elec2[,c(4,8)]
+tran_bx_t10 <- subset(sale_tran_box, (sale_tran_box$STATE %in% c("CALIFORNIA","TEXAS", "FLORIDA", "NEW YORK", "PENNSYLVANIA","ILLINOIS", "OHIO","GEORGIA","NORTH CAROLINA","MICHIGAN")))
+
+
+
+tr_aggt10<-tran_bx_t10 %>% group_by(STATE)%>%
+  summarise(m=median(SALES, na.rm=TRUE))
+
+b1 <-ggplot(tran_bx_t10, aes(x=reorder(STATE, tran_bx_t10$SALES) , SALES)) +
+  geom_jitter(width = .05,
+              alpha = .8,
+              color = "skyblue")+
+  geom_boxplot(alpha=.1, outlier.color = NULL, fill="green")
+
+
+
+b1 + geom_label_repel(stat ='summary',
+                      label = scales::comma(round(tr_aggt10$m),2),
+                      nudge_y = -400, nudge_x = 0,
+                      segment.size = 0, 
+                      segment.alpha = .9, size=3,
+                      color='darkred') + ylim(-100, 5000)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1))+ylab("Electric Consumption per Unit in MWh") +
+  xlab("Top 10 State by Population") +
+  annotate("text", x= 9, y= -99, label="Median Values: as above ", color ="darkred") +
+  ggtitle("Distribution of Electricity Consumption within Transport Sector")
+
+```
+
+The boxplots show the distribution of the data within the electric transportation sector and the data is a subset of the entire dataset representing only 10 most populated states. The boxplot shows the median value of the data by each state. 
+
+We can also see from the boxplot our data is heavily skewed meaning that data having lots of outliers. We can also see that California has the highest median value signaling that it is the state which usages the electrification in transportation most. The second state using the electrification most is the Texas and Georgia is the one which uses lest electrification among the top 10 most populated states.
+
+
+
+## 11. Distribution of Electric Transportation (Top 5 Subsectors)
+
+```{r box2, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+# BOX PLOT 2
+
+transbox_subsector <- sales_stock_elec2
+
+tr_sub_agg <-transbox_subsector %>% group_by(SUBSECTOR)%>%
+  summarise(m=median(SALES, na.rm=TRUE))
+
+b3 <-ggplot(transbox_subsector, aes(x=reorder(SUBSECTOR, transbox_subsector$SALES), y=SALES)) +
+  geom_jitter(width = .05,
+              alpha = .8,
+              color = "violet")+
+  geom_boxplot(alpha=.1, outlier.color = NULL, fill="yellow")
+
+
+ 
+b3 + ylim(-20, 300)+
+theme_classic()+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0.1))+ylab("Electric Consumption in MWh") +
+  xlab("Subsectors") +
+  ggtitle("Distribution of Electricity Consumption within Transport Subsectors")
+
+```
+
+
+The boxplot shows the distribution of the data by subsectors of the transportation sector of the electrification. The boxplot shows the median value for different subsector of electric transportation. The data is also showing some skewness signaling the data having the outliers.
+
+
+
+## 12. Conclusion
+
+This analysis has clearly highlighted some interesting facts about the future of electric energy in this country. At the same time from our perspective has, cleared any doubts regarding the overburdening of the grid with the already present massive adoption of electric transport vehicles.
+
+No doubt, there is a perceived threat to the electric grid on a whole due to all the increased demand in the future but this is an indication to us all that we need to start planning for this increased surge in the demand which will require huge efforts both from the public and the government.
+
+At the end we can confidently say that comments regarding the explosion in electric vehicle use and the grid crashing are to the most extent false.
+
+
+
+## Bibliography
+
+
+Cartographic Boundary Files - Shapefile. (2018). Retrieved from United States Census Bureau: https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html
+
+ 
+Centers for Disease Control and Prevention. (2019, 11 21). Retrieved from CDC: https://wonder.cdc.gov/population-projections.html
+
+ 
+Cohen, B. (2019). ANLY 512 Data Visualization: Grammar of Graphics & ggplot2 & dplyr, week 3, sesson 3 notes[Labeling in ggplot-an example]. Retrieved from https://moodle.harrisburgu.edu/course/view.php?id=8145
+
+ 
+Cohen, B. (2019). ANLY 512-50- B-2019/Fall - Data Visualization: Lectures and Libraries examples, all sesson. Retrieved from: https://moodle.harrisburgu.edu/course/view.php?id=8145
+
+ 
+Jarrett, T. (2018, 09 26). Opinion: Can our power grid support electric cars? Retrieved from The Detroit News: https://www.detroitnews.com/story/opinion/2018/09/27/can-our-power-grid-support-electric-cars/1420140002/
+
+ 
+Mai, Trieu et al. (2018): Electric Technology Adoption and Energy Consumption. National Renewable Energy Laboratory. https://dx.doi.org/10.7799/1461472. Retrived from https://data.nrel.gov/submissions/92
+
+ 
+Stockton, N. (2019, 11 29). Electric Cars Could Destroy the Electric Grid-or Fix it Forever. Retrieved from WIRED: https://www.wired.com/story/electric-cars-impact-electric-grid/
+
+ 
+White, M. (2019, 11 19). The 10 Largest States by Population. Retrieved from moving.com: https://www.moving.com/tips/the-10-largest-states-by-population/
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
